@@ -1,0 +1,170 @@
+// ARPRO 相続案件管理アプリ：データベースのスキーマ（Prisma 6、SQLite）。
+//
+// 読み方：
+// - 「FK」= 外部キー：別のテーブルの行の id を保存する列。
+// - `cases Case[]` や `case Case?` のような項目は列ではない。コードから関連を逆にたどるためのもの。
+//   実際のつながりは、常に相手側のテーブルにある FK の列。
+// - ステージ・流入経路・選択肢の種類は文字列。使える値はデータベースではなく、
+//   サーバーのルール関数が確認する（ルールと結びついているため、コード内の定数で管理）。
+// - 物件種別・提携先種別・続柄はマスタデータのテーブル。行を追加するだけで選択肢を増やせる。
+// - 暦日（死亡日・相談会の日付）は "YYYY-MM-DD" の文字列。タイムゾーンで日付がずれない。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 物件種別（マスタデータ）：ARPRO が扱う物件の種類。
+// テーブルにする理由：開発者なしで行を追加でき（例：借地権）、表示名もコードと一緒に1か所で管理できる。
+// `Property.type` はこのコードを保存し、データベースが外部キーとして存在を確認する。
+// 初期データはマイグレーション "lookups" が投入する。
+model PropertyType {
+  code       String     @id // 他のテーブルが保存する値（例：condo_unit）
+  label      String // 画面の表示名（例：区分マンション）
+  sortOrder  Int // プルダウンでの表示順
+  properties Property[] // 逆参照：この種別の物件
+}
+
+// 提携先種別（マスタデータ）：提携先の事務所の種類。PropertyType と同じ仕組み。
+model PartnerType {
+  code      String    @id // 例：tax_accountant
+  label     String // 例：税理士
+  sortOrder Int
+  partners  Partner[] // 逆参照：この種別の提携先
+}
+
+// 続柄（マスタデータ）：相続人と被相続人の関係（配偶者・子 … その他）。PropertyType と同じ仕組み。
+// 一覧にない関係は「その他（other）」を使う。
+model RelationshipType {
+  code      String @id // 例：spouse
+  label     String // 例：配偶者
+  sortOrder Int
+  heirs     Heir[] // 逆参照：この続柄の相続人
+}
+
+// 提携先：約120社の提携事務所の1つ（税理士・司法書士・弁護士）。案件はここから紹介される。
+// 紹介の案件には提携先が必須、相談会の案件では任意（流入経路のルールで確認）。
+model Partner {
+  id        Int      @id @default(autoincrement())
+  name      String
+  type      String // PartnerType のコード（外部キー）
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cases     Case[] // 逆参照：この提携先が紹介した案件
+
+  partnerType PartnerType @relation(fields: [type], references: [code])
+}
+
+// 依頼者：ARPRO に相談された方。1人が複数の案件を持てる（二次相続など）。
+// ルール（データベース）：電話番号は一意なので、依頼者が重複しない。
+// ルール（コード）：電話番号は先に正規化する（全角数字・+81・記号）。同じ番号・同じ名前なら
+// 既存の依頼者を再利用し、同じ番号で名前が違えば拒否する。
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String   @unique // 正規化して数字のみで保存
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cases     Case[] // 逆参照：この依頼者のすべての案件
+}
+
+// 物件：案件の対象となる不動産。
+// ルール：1つの物件に案件は1つだけ（Case.propertyId の一意制約で保証）。
+model Property {
+  id             Int      @id @default(autoincrement())
+  address        String
+  type           String // PropertyType のコード（外部キー）
+  estimatedPrice Int // 円。PostgreSQL では Int は32ビット（最大 約21億）なので、入力の上限をチェックする
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  case           Case? // 逆参照：この物件の案件（案件ができるまでは空）
+
+  propertyType PropertyType @relation(fields: [type], references: [code])
+}
+
+// 案件：アプリの中心。1つの相続案件がステージを進んでいく。
+// ルール（データベース）：1物件に1案件（propertyId が一意）、1つの選択肢を決定できるのは1案件のみ
+// （chosenOptionId が一意）。
+// ルール（コード）：
+// - ステージは1段階ずつ：受付 > 相談 > 提案 > 契約 > 完了
+// - 提案には異なる種類の選択肢が2つ以上必要
+// - 契約には選択肢の決定・相続人1名以上・全員の同意が必要
+// - 決定する選択肢はこの案件のものに限り、提案ステージでのみ決定できる
+// - 紹介は提携先が必須、相談会は名称と日付が必須
+model Case {
+  id             Int      @id @default(autoincrement())
+  clientId       Int // Client への FK（必須）
+  propertyId     Int      @unique // Property への FK。一意 = 1案件1物件
+  partnerId      Int? // Partner への FK。任意：相談会では提携先がないこともある
+  leadSource     String // partner_referral | consultation_event
+  eventName      String? // 相談会の場合のみ
+  eventDate      String? // 相談会の場合のみ、YYYY-MM-DD
+  dateOfDeath    String // YYYY-MM-DD。法定期限はここから数える
+  stage          String   @default("intake") // intake | consultation | proposal | contract | closed
+  chosenOptionId Int?     @unique // Option への FK。決定するまで空。この案件の選択肢であること（コードで確認）
+  stageUpdatedAt DateTime @default(now()) // 最後にステージが動いた日時。「停滞（14日以上）」バッジに使う
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  client       Client         @relation(fields: [clientId], references: [id])
+  property     Property       @relation(fields: [propertyId], references: [id])
+  partner      Partner?       @relation(fields: [partnerId], references: [id])
+  chosenOption Option?        @relation("ChosenOption", fields: [chosenOptionId], references: [id])
+  heirs        Heir[] // 逆参照：この案件の相続人
+  options      Option[]       @relation("CaseOptions") // 逆参照：比較するすべての選択肢
+  history      StageHistory[] // 逆参照：タイムライン
+}
+
+// 相続人：相続する方。一人ひとりの意向が大切なので、それぞれの同意を記録する。
+// ルール（コード）：
+// - 契約には相続人1名以上と全員の同意が必要（「全員が同意」は0人でも真になるため、0人は別にチェック）
+// - 契約ステージ以降は相続人と同意を変更できない
+// - 決定する選択肢が変わると、全員の同意が未同意に戻る
+model Heir {
+  id           Int      @id @default(autoincrement())
+  caseId       Int // Case への FK
+  name         String
+  relationship String // RelationshipType のコード（外部キー）
+  agreed       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  case             Case             @relation(fields: [caseId], references: [id])
+  relationshipType RelationshipType @relation(fields: [relationship], references: [code])
+}
+
+// 選択肢：物件の扱い方の1つ（売却・賃貸・建築・保有）。ARPRO はすべての選択肢を示し、売却を押し付けない。
+// ルール（データベース）：(caseId, type) が一意なので、1つの案件に「売却」を2つ登録できない。
+// これにより「異なる選択肢が2つ」のルールをすり抜けられない。
+// ルール（コード）：金額は1円以上の整数。提案ステージ以降は選択肢を変更できない。
+model Option {
+  id        Int      @id @default(autoincrement())
+  caseId    Int // Case への FK
+  type      String // sell | rent | build | keep
+  amount    Int // 円（賃貸は月額）
+  memo      String   @default("") // メリット・デメリット
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case      Case  @relation("CaseOptions", fields: [caseId], references: [id]) // この選択肢が属する案件
+  chosenFor Case? @relation("ChosenOption") // 逆参照：この選択肢が決定された場合の案件
+
+  @@unique([caseId, type]) // 1つの案件に同じ種類の選択肢を2つ登録できない
+}
+
+// ステージ履歴：案件のステージが動くたびに1行。案件詳細のタイムラインに使う。
+// ルール：ステージの変更と同じトランザクションで書き込むので、途中で落ちても「履歴のない移動」は残らない。
+// 案件の登録時には行を書かないので、fromStage は常に値がある。
+model StageHistory {
+  id        Int      @id @default(autoincrement())
+  caseId    Int // Case への FK
+  fromStage String
+  toStage   String
+  changedAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id])
+}

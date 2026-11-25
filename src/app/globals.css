@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+
+/* ARPRO のサイトで実測した色。それぞれの名前が Tailwind のクラスになる。
+   例：--color-navy から bg-navy・text-navy・border-navy が使える。 */
+@theme {
+  --color-navy: #152a4e;
+  --color-navy-hover: #4d6386;
+  --color-accent: #ffba0d;
+  --color-page: #f8f7f4;
+  --color-line: #dad7d1;
+  --color-body: #484642;
+  --color-muted: #6e6e6e;
+
+  /* バッジとメッセージ */
+  --color-warn-bg: #fef3c7;
+  --color-warn-text: #92400e;
+  --color-danger-bg: #fee2e2;
+  --color-danger-text: #b91c1c;
+  --color-ok-bg: #dcfce7;
+  --color-ok-text: #15803d;
+
+  --radius-card: 8px;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-body);
+  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-size: 15px;
+}
+
+/* 共通の部品。すべての画面の見た目をそろえる。 */
+@layer components {
+  .card {
+    @apply rounded-card border border-line bg-white p-5;
+  }
+  .input {
+    @apply w-full rounded-card border border-line bg-white px-3 py-2;
+  }
+  .btn-primary {
+    @apply rounded-card bg-navy px-4 py-2 font-bold text-white hover:bg-navy-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply rounded-card border border-navy bg-white px-4 py-2 font-bold text-navy hover:bg-page disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .link {
+    @apply text-navy hover:underline;
+  }
+  .badge-stuck {
+    @apply rounded bg-warn-bg px-2 py-0.5 text-sm text-warn-text;
+  }
+  .badge-deadline {
+    @apply rounded bg-danger-bg px-2 py-0.5 text-sm text-danger-text;
+  }
+  .badge-ok {
+    @apply rounded bg-ok-bg px-2 py-0.5 text-sm text-ok-text;
+  }
+  .error-box {
+    @apply rounded-card border border-danger-text bg-danger-bg p-3 text-danger-text;
+  }
+  .field-error {
+    @apply mt-1 text-sm text-danger-text;
+  }
+}
+
+/* 比較シートは印刷できる。紙にはヘッダーとボタンを出さない。 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+}

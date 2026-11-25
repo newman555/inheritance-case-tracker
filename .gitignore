@@ -1,0 +1,13 @@
+node_modules
+.next
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Secrets and local databases (dev.db, test.db)
+.env
+*.db
+*.db-journal
+
+# All documentation for now: README, diagrams, step log, notes, private files (local only)
+docs/
+*.pdf
