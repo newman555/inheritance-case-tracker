@@ -4,12 +4,13 @@ import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { callApi } from '@/lib/callApi'
 import type { Lookup } from '@/lib/lookups'
-import { canEditHeirs } from '@/rules/locks'
+import { canEditHeirs, canRemoveHeirs } from '@/rules/locks'
 import { Stage } from '@/rules/stages'
 
 // 案件詳細の「相続人」：相続する方々と、それぞれの同意の有無。
-// 契約には相続人1名以上と全員の同意が必要。契約ステージ以降は相続人と同意を変更できない。
-// そのときボタンは隠すが、サーバーも同じルールで確認する。
+// 契約には相続人1名以上と全員の同意が必要。
+// 削除は提案ステージから、追加と同意の変更は契約ステージからできない。
+// できない操作のボタンは隠す（同意のチェックは押せなくする）が、サーバーも同じルールで確認する。
 
 type Heir = { id: number; name: string; relationshipLabel: string; agreed: boolean }
 type Props = { caseId: number; stage: Stage; heirs: Heir[]; relationships: Lookup[] }
@@ -20,7 +21,8 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
   const [name, setName] = useState('')
   const [relationship, setRelationship] = useState(relationships[0]?.code ?? '')
 
-  const editable = canEditHeirs(stage)
+  const editable = canEditHeirs(stage) // 追加・同意の変更
+  const removable = canRemoveHeirs(stage) // 削除（提案ステージからできない）
   const agreedCount = heirs.filter((h) => h.agreed).length
 
   // API を1回呼ぶ。成功：ページのデータを再読み込み。拒否：サーバーのメッセージを表示。
@@ -54,6 +56,9 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
       </div>
 
       {!editable && <p className="text-sm text-muted">契約ステージ以降は相続人と同意を変更できません。</p>}
+      {editable && !removable && (
+        <p className="text-sm text-muted">提案ステージ以降は相続人を削除できません（追加と同意の変更は契約の前までできます）。</p>
+      )}
 
       {heirs.length === 0 ? (
         <p className="text-muted">まだ相続人がいません。契約には1名以上の登録と全員の同意が必要です。</p>
@@ -73,7 +78,7 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
                 />
                 同意
               </label>
-              {editable && (
+              {removable && (
                 <button
                   className="btn-secondary px-3 py-1 text-sm"
                   onClick={() => run(`/api/cases/${caseId}/heirs/${h.id}`, 'DELETE')}

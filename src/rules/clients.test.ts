@@ -12,6 +12,9 @@ describe('電話番号の正規化', () => {
   it('+81 を 0 にする', () => {
     expect(normalizePhone('+81 90-1234-5678')).toBe('09012345678')
   })
+  it('+81 の後に 0 を残した書き方も同じ番号になる', () => {
+    expect(normalizePhone('+81 090-1234-5678')).toBe('09012345678')
+  })
   it('桁数が足りない番号は拒否する', () => {
     expect(codeOf(() => normalizePhone('123'))).toBe('INVALID_PHONE')
   })

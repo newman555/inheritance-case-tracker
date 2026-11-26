@@ -3,10 +3,11 @@
 // POST /api/cases = 新しい案件を登録する。
 //   依頼者・物件・案件をまとめて保存する（1つのトランザクション）。
 //   拒否（400）：項目の不足・誤り、不明な物件種別、存在しない・未来の死亡日、提携先のない紹介、
-//               名称のない・日付がない・未来の日付の相談会、誤った電話番号。
+//               正の整数でない提携先の id、名称のない・日付がない・未来の日付の相談会、誤った電話番号。
 //   拒否（404）：提携先が存在しない。
 //   拒否（409）：この電話番号が別の名前の依頼者で登録済み。
 //   電話番号と名前が登録済みの依頼者と一致すれば、その依頼者を再利用する（再び来られたご家族）。
+//   相談会の名称・日付は相談会の案件にだけ保存する（紹介の案件では、送られても保存しない）。
 //
 // GET /api/cases = パイプラインボード用の一覧。
 //   絞り込み（任意）：?client=1 または ?partner=1
@@ -18,9 +19,9 @@ import { listCases } from '@/lib/cases'
 import { fail, parseId, readBody } from '@/lib/http'
 import { todayJst } from '@/lib/today'
 import { normalizePhone, resolveClient } from '@/rules/clients'
-import { deadlinesFor } from '@/rules/dates'
+import { validateDateOfDeath } from '@/rules/dates'
 import { RuleError } from '@/rules/errors'
-import { validateLeadSource } from '@/rules/leadSource'
+import { EVENT, validateLeadSource } from '@/rules/leadSource'
 import { MAX_YEN } from '@/rules/values'
 
 // 本文の形。業務ルールより先に zod が確認する。
@@ -36,7 +37,7 @@ const createCaseBody = z.object({
     .max(MAX_YEN, '査定額が大きすぎます'),
   dateOfDeath: z.string().min(1, '死亡日を入力してください'),
   leadSource: z.string().min(1, '流入経路を選んでください'),
-  partnerId: z.number().int().nullish(),
+  partnerId: z.number('提携先を正しく選んでください').int().positive().nullish(), // 0 や負の数は 400
   eventName: z.string().nullish(),
   eventDate: z.string().nullish(),
 })
@@ -47,9 +48,10 @@ export async function POST(req: Request) {
 
     // 1. データベースを使わない業務ルール。
     const today = todayJst()
-    validateLeadSource(body, today) // 紹介は提携先が必須、相談会は名称と過去の日付が必須
-    deadlinesFor(body.dateOfDeath, today) // 存在しない・未来の死亡日を拒否
+    validateLeadSource(body, today) // 紹介は提携先が必須、相談会は名称と今日以前の日付が必須
+    validateDateOfDeath(body.dateOfDeath, today) // 存在しない・未来の死亡日を拒否
     const phone = normalizePhone(body.clientPhone)
+    const isEvent = body.leadSource === EVENT
 
     // 2. データベースを使うルール。
     if (body.partnerId) {
@@ -79,8 +81,9 @@ export async function POST(req: Request) {
           propertyId: property.id,
           partnerId: body.partnerId ?? null,
           leadSource: body.leadSource,
-          eventName: body.eventName ?? null,
-          eventDate: body.eventDate ?? null,
+          // 相談会の名称・日付は相談会の案件だけの項目。紹介の案件では送られても空にする。
+          eventName: isEvent ? (body.eventName ?? null) : null,
+          eventDate: isEvent ? (body.eventDate ?? null) : null,
           dateOfDeath: body.dateOfDeath,
         },
         include: { client: true, property: true },

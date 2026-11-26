@@ -1,6 +1,6 @@
 // 提携先 = 案件を紹介してくれる事務所（税理士・司法書士・弁護士）。
 //
-// GET  /api/partners = 一覧。各提携先の「紹介件数」と「完了件数」付き。
+// GET  /api/partners = 一覧。各提携先の「案件数」（紹介・相談会）と「完了件数」付き。
 // POST /api/partners = 提携先を追加する。   本文：{ "name": "...", "type": "tax_accountant" }
 //   拒否（400）：名称が空、または PartnerType テーブルにない種別。
 import { NextResponse } from 'next/server'

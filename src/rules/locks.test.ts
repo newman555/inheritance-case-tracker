@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertCanChooseOption, assertCanEditHeirs, assertCanEditOptions, choiceResetsAgreements } from './locks'
+import { assertCanChooseOption, assertCanEditHeirs, assertCanEditOptions, assertCanRemoveHeir, choiceResetsAgreements } from './locks'
 import { codeOf } from './testUtils'
 
 describe('選択肢は提案から編集不可', () => {
@@ -11,12 +11,21 @@ describe('選択肢は提案から編集不可', () => {
   })
 })
 
-describe('相続人は契約から編集不可', () => {
-  it('提案ステージでは相続人を編集できる', () => {
+describe('相続人の追加と同意の変更は契約から不可', () => {
+  it('提案ステージでは相続人の追加と同意の変更ができる', () => {
     expect(codeOf(() => assertCanEditHeirs('proposal'))).toBeNull()
   })
-  it('契約ステージでは相続人を編集できない', () => {
+  it('契約ステージでは相続人の追加と同意の変更ができない', () => {
     expect(codeOf(() => assertCanEditHeirs('contract'))).toBe('HEIRS_LOCKED')
+  })
+})
+
+describe('相続人の削除は提案から不可（同意していない人を外して契約へ進めないため）', () => {
+  it('相談ステージでは相続人を削除できる', () => {
+    expect(codeOf(() => assertCanRemoveHeir('consultation'))).toBeNull()
+  })
+  it('提案ステージでは相続人を削除できない', () => {
+    expect(codeOf(() => assertCanRemoveHeir('proposal'))).toBe('HEIR_REMOVAL_LOCKED')
   })
 })
 

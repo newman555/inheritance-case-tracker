@@ -101,6 +101,9 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
         <div className="space-y-6">
           <section className="card">
             <h2 className="mb-3 font-bold text-navy">法定期限</h2>
+            {c.deadlines.length === 0 && (
+              <p className="text-danger-text">死亡日が正しくないため、期限を計算できません。</p>
+            )}
             <ul className="space-y-3">
               {c.deadlines.map((d) => (
                 <li key={d.key}>

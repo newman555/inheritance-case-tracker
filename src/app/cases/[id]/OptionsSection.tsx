@@ -10,7 +10,7 @@ import { OPTION_TYPES, Stage } from '@/rules/stages'
 
 // 案件詳細の「選択肢」：ご家族が比較する、物件の扱い方。
 // - 追加・削除：提案ステージより前のみ
-// - 決定：提案ステージでのみ。別の選択肢に決定し直すと、全員の同意がリセットされる
+// - 決定：提案ステージでのみ。決定すると（決定し直す場合も）、全員の同意が未同意に戻る
 // できない操作のボタンは隠すが、サーバーも同じルールで確認する。
 
 type Option = { id: number; type: string; amount: number; memo: string }
@@ -70,7 +70,7 @@ export default function OptionsSection({ caseId, stage, options, chosenOptionId 
       )}
       {!editable && <p className="text-sm text-muted">提案ステージ以降は選択肢を変更できません。</p>}
       {canChoose && (
-        <p className="text-sm text-muted">ご家族が選んだ選択肢を決定してください。別の選択肢に決定し直すと、相続人全員の同意がリセットされます。</p>
+        <p className="text-sm text-muted">ご家族が選んだ選択肢を決定してください。決定すると（決定し直す場合も）、相続人全員の同意が未同意に戻ります。</p>
       )}
 
       {options.length === 0 ? (

@@ -10,13 +10,20 @@ export function canEditOptions(stage: Stage): boolean {
   return stageIndex(stage) < stageIndex('proposal')
 }
 
-// 相続人と同意の変更は「契約」より前のみ。
+// 相続人の追加と同意の変更は「契約」より前のみ。
 export function canEditHeirs(stage: Stage): boolean {
   return stageIndex(stage) < stageIndex('contract')
 }
 
-// 上の2つを「拒否」として使う版。API は変更の前に必ずこれを呼ぶ。
-// （画面は canEdit… をボタンを隠すためだけに使う。判断するのは常にサーバー）
+// 相続人の削除は、それより早く「提案」より前のみ。
+// 追加は同意が必要な人が増えるだけでルールは緩まない。削除は、同意していない人を外して契約へ進む
+// 抜け道になる。そのため、同意を集め始める提案ステージから、削除だけを先に禁止する。
+export function canRemoveHeirs(stage: Stage): boolean {
+  return stageIndex(stage) < stageIndex('proposal')
+}
+
+// 上の3つを「拒否」として使う版。API は変更の前に必ずこれを呼ぶ。
+// （画面は canEdit… / canRemove… をボタンを隠すためだけに使う。判断するのは常にサーバー）
 export function assertCanEditOptions(stage: Stage): void {
   if (!canEditOptions(stage)) {
     throw new RuleError('OPTIONS_LOCKED', '提案ステージ以降は選択肢を変更できません。')
@@ -26,6 +33,12 @@ export function assertCanEditOptions(stage: Stage): void {
 export function assertCanEditHeirs(stage: Stage): void {
   if (!canEditHeirs(stage)) {
     throw new RuleError('HEIRS_LOCKED', '契約ステージ以降は相続人と同意を変更できません。')
+  }
+}
+
+export function assertCanRemoveHeir(stage: Stage): void {
+  if (!canRemoveHeirs(stage)) {
+    throw new RuleError('HEIR_REMOVAL_LOCKED', '提案ステージ以降は相続人を削除できません。')
   }
 }
 

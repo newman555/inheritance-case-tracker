@@ -4,10 +4,11 @@ import { RuleError } from '@/rules/errors'
 import { daysBetween, deadlinesFor, isNearDeadline, isStuck } from '@/rules/dates'
 import { isStage, Stage } from '@/rules/stages'
 
-// 案件の読み取り。API ルートと画面の両方がこの関数を使うので、
+// 案件の読み取り。API ルートと画面の両方がこれらの関数を使うので、
 // ボード・案件詳細・API が表示する内容は常に同じになる。
 
-// 案件を探す。なければ 404 で拒否する。案件を変更する前に必ず使う。
+// 案件を探す。なければ 404 で拒否する。案件を変更する API が最初に呼ぶ
+// （advance だけは選択肢と相続人も一緒に必要なので、自分で読み込む）。
 export async function loadCase(id: number) {
   const found = await db.case.findUnique({ where: { id } })
   if (!found) throw new RuleError('CASE_NOT_FOUND', '案件が見つかりません。', 404)

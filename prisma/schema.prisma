@@ -1,11 +1,11 @@
 // ARPRO 相続案件管理アプリ：データベースのスキーマ（Prisma 6、SQLite）。
 //
 // 読み方：
-// - 「FK」= 外部キー：別のテーブルの行の id を保存する列。
+// - 「FK」= 外部キー：別のテーブルの行を指す列（相手の id、マスタデータの場合はコードを保存する）。
 // - `cases Case[]` や `case Case?` のような項目は列ではない。コードから関連を逆にたどるためのもの。
 //   実際のつながりは、常に相手側のテーブルにある FK の列。
 // - ステージ・流入経路・選択肢の種類は文字列。使える値はデータベースではなく、
-//   サーバーのルール関数が確認する（ルールと結びついているため、コード内の定数で管理）。
+//   サーバーのコード（ルール関数と入力チェック）が確認する（ルールと結びついているため、コード内の定数で管理）。
 // - 物件種別・提携先種別・続柄はマスタデータのテーブル。行を追加するだけで選択肢を増やせる。
 // - 暦日（死亡日・相談会の日付）は "YYYY-MM-DD" の文字列。タイムゾーンで日付がずれない。
 
@@ -19,9 +19,9 @@ datasource db {
 }
 
 // 物件種別（マスタデータ）：ARPRO が扱う物件の種類。
-// テーブルにする理由：開発者なしで行を追加でき（例：借地権）、表示名もコードと一緒に1か所で管理できる。
+// テーブルにする理由：コードを変えずに行を追加するだけで種類を増やせ（例：借地権）、表示名もコードと一緒に1か所で管理できる。
 // `Property.type` はこのコードを保存し、データベースが外部キーとして存在を確認する。
-// 初期データはマイグレーション "lookups" が投入する。
+// 初期データはマイグレーション "lookups" が投入する（表示名はマイグレーション "japanese_labels" で日本語に変更）。
 model PropertyType {
   code       String     @id // 他のテーブルが保存する値（例：condo_unit）
   label      String // 画面の表示名（例：区分マンション）
@@ -37,8 +37,8 @@ model PartnerType {
   partners  Partner[] // 逆参照：この種別の提携先
 }
 
-// 続柄（マスタデータ）：相続人と被相続人の関係（配偶者・子 … その他）。PropertyType と同じ仕組み。
-// 一覧にない関係は「その他（other）」を使う。
+// 続柄（マスタデータ）：相続人と被相続人の関係（配偶者・息子・娘 … その他）。PropertyType と同じ仕組み。
+// 初期データはマイグレーション "relationships" が投入する。一覧にない関係は「その他（other）」を使う。
 model RelationshipType {
   code      String @id // 例：spouse
   label     String // 例：配偶者
@@ -101,12 +101,12 @@ model Case {
   propertyId     Int      @unique // Property への FK。一意 = 1案件1物件
   partnerId      Int? // Partner への FK。任意：相談会では提携先がないこともある
   leadSource     String // partner_referral | consultation_event
-  eventName      String? // 相談会の場合のみ
-  eventDate      String? // 相談会の場合のみ、YYYY-MM-DD
+  eventName      String? // 相談会の場合のみ（紹介の案件では常に空。API が保存しない）
+  eventDate      String? // 相談会の場合のみ、YYYY-MM-DD（紹介の案件では常に空）
   dateOfDeath    String // YYYY-MM-DD。法定期限はここから数える
   stage          String   @default("intake") // intake | consultation | proposal | contract | closed
   chosenOptionId Int?     @unique // Option への FK。決定するまで空。この案件の選択肢であること（コードで確認）
-  stageUpdatedAt DateTime @default(now()) // 最後にステージが動いた日時。「停滞（14日以上）」バッジに使う
+  stageUpdatedAt DateTime @default(now()) // 現在のステージになった日時（登録直後は登録日時）。経過日数と「停滞（14日以上）」バッジに使う
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -122,8 +122,9 @@ model Case {
 // 相続人：相続する方。一人ひとりの意向が大切なので、それぞれの同意を記録する。
 // ルール（コード）：
 // - 契約には相続人1名以上と全員の同意が必要（「全員が同意」は0人でも真になるため、0人は別にチェック）
-// - 契約ステージ以降は相続人と同意を変更できない
-// - 決定する選択肢が変わると、全員の同意が未同意に戻る
+// - 提案ステージ以降は削除できない（同意していない方を外して契約へ進めないようにするため）
+// - 契約ステージ以降は追加も同意の変更もできない
+// - 決定した選択肢が変わると（最初の決定も含む）、全員の同意が未同意に戻る
 model Heir {
   id           Int      @id @default(autoincrement())
   caseId       Int // Case への FK
@@ -140,7 +141,7 @@ model Heir {
 // 選択肢：物件の扱い方の1つ（売却・賃貸・建築・保有）。ARPRO はすべての選択肢を示し、売却を押し付けない。
 // ルール（データベース）：(caseId, type) が一意なので、1つの案件に「売却」を2つ登録できない。
 // これにより「異なる選択肢が2つ」のルールをすり抜けられない。
-// ルール（コード）：金額は1円以上の整数。提案ステージ以降は選択肢を変更できない。
+// ルール（コード）：金額は1円以上の整数（上限20億円）。提案ステージ以降は選択肢を変更できない。
 model Option {
   id        Int      @id @default(autoincrement())
   caseId    Int // Case への FK

@@ -71,7 +71,7 @@ export default function NewCaseForm({ partners, propertyTypes, today }: Props) {
 
   return (
     <form onSubmit={submit} className="space-y-6">
-      {/* 特定の項目の問題ではない拒否（例：この電話番号は別の名前で登録済み）。 */}
+      {/* 特定の項目の問題ではない拒否（例：通信エラー、同時に登録されたための重複）。項目の問題はその項目の下に表示する。 */}
       {error && !error.field && <div className="error-box">{error.message}</div>}
 
       <section className="card space-y-4">

@@ -18,7 +18,7 @@ export function stageIndex(stage: Stage): number {
   return STAGES.indexOf(stage)
 }
 
-// ルールの判断に必要な案件の情報（必要なものだけ）。
+// ルールの判断に使う案件の情報（必要な項目だけ）。
 export type AdvanceInput = {
   stage: Stage // 現在のステージ
   toStage: string // 移動したいステージ
@@ -29,32 +29,33 @@ export type AdvanceInput = {
 
 // ルール1〜3：案件を次のステージへ進めてよいかを判断する。
 // 問題なければ何もせず、できない場合は RuleError を投げる。
+// 上から順に確認し、最初に当てはまった理由で拒否する（テストはその code を確認している）。
 export function checkAdvance(input: AdvanceInput): void {
   const { stage, toStage, optionTypes, chosenOptionId, heirs } = input
 
-  // 1. 完了した案件は二度と動かない。
+  // ルール1：完了した案件は二度と動かない。
   if (stage === 'closed') {
     throw new RuleError('CASE_CLOSED', '完了した案件は変更できません。')
   }
 
-  // 2. 指定されたステージが実在するか。
+  // ルール1：指定されたステージが実在するか（外から来る値なので確認する）。
   if (!isStage(toStage)) {
     throw new RuleError('INVALID_STAGE', '不明なステージです。', 400, 'toStage')
   }
 
-  // 3. ちょうど次のステージであること（飛ばす・戻すは不可）。
+  // ルール1：ちょうど次のステージであること（飛ばす・戻すは不可）。
   const next = STAGES[stageIndex(stage) + 1]
   if (toStage !== next) {
     throw new RuleError('STAGE_NOT_NEXT', 'ステージを飛ばしたり戻したりすることはできません。')
   }
 
-  // 4. 「提案」へは、異なる種類の選択肢が2つ以上必要。
-  //    （Set は重複を除くので、['sell', 'sell'] は1つと数える）
+  // ルール2：「提案」へは、異なる種類の選択肢が2つ以上必要。
+  //          （Set は重複を除くので、['sell', 'sell'] は1つと数える）
   if (next === 'proposal' && new Set(optionTypes).size < 2) {
     throw new RuleError('NEED_TWO_OPTIONS', '提案の前に、異なる種類の選択肢を2つ以上登録してください。')
   }
 
-  // 5. 「契約」へは、選択肢の決定・相続人1名以上・全員の同意が必要。
+  // ルール3：「契約」へは、選択肢の決定・相続人1名以上・全員の同意が必要（この順に確認する）。
   if (next === 'contract') {
     if (chosenOptionId === null) {
       throw new RuleError('NO_CHOSEN_OPTION', '契約の前に選択肢を決定してください。')

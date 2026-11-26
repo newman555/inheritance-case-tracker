@@ -15,7 +15,7 @@ import * as lookupsRoute from '@/app/api/lookups/route'
 
 // ルート関数を、サーバーと同じように直接呼び出す（ネットワークは使わない）。
 // HTTP ステータスと JSON の本文を返す。
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// ルートごとに params の形が違うので、ここでは any で受ける。
 type Handler = (req: Request, ctx: { params: Promise<any> }) => Promise<Response>
 
 async function send(handler: Handler, method: string, url: string, body?: unknown, params: Record<string, string> = {}) {
@@ -63,9 +63,10 @@ const addOption = (id: number, type: string, amount = 1_000_000) => send(options
 const addHeir = (id: number) => send(heirsRoute.POST, 'POST', `/api/cases/${id}/heirs`, { name: '佐藤 一郎', relationship: 'son' }, { id: String(id) })
 const choose = (id: number, optionId: number) => send(chosenRoute.PUT, 'PUT', `/api/cases/${id}/chosen-option`, { optionId }, { id: String(id) })
 
-// 選択肢を2つ登録して提案ステージまで進めた新しい案件。id を返す。
+// 選択肢を2つ登録して提案ステージまで進めた新しい案件。案件の id と2つの選択肢の id を返す。
+// 何度呼んでも同じ電話番号・名前なので、依頼者が再利用されてエラーにならない。
 async function caseAtProposal() {
-  const id = (await createCase({ clientPhone: '090-' + Math.floor(1000 + Math.random() * 8999) + '-0000' })).body.id as number
+  const id = (await createCase()).body.id as number
   await advance(id, 'consultation')
   const sell = (await addOption(id, 'sell', 20_000_000)).body.id as number
   const rent = (await addOption(id, 'rent', 90_000)).body.id as number
@@ -109,6 +110,20 @@ describe('POST /api/cases', () => {
     const res = await createCase({ leadSource: 'partner_referral' })
     expect(res.status).toBe(400)
     expect(res.body.error.code).toBe('PARTNER_REQUIRED')
+  })
+
+  it('紹介の案件には、送られても相談会の名称・日付を保存しない', async () => {
+    const partner = (await createPartner()).body
+    const res = await createCase({ leadSource: 'partner_referral', partnerId: partner.id, eventName: '相談会ではない', eventDate: 'hello' })
+    expect(res.status).toBe(201)
+    const saved = await db.case.findUniqueOrThrow({ where: { id: res.body.id } })
+    expect([saved.eventName, saved.eventDate]).toEqual([null, null])
+  })
+
+  it('提携先の id が正の整数でなければ拒否する（400）', async () => {
+    const res = await createCase({ partnerId: 0 }) // 提携先が任意の相談会の案件でも
+    expect(res.status).toBe(400)
+    expect(res.body.error.field).toBe('partnerId')
   })
 
   it('存在しない提携先は拒否する（404）', async () => {
@@ -158,6 +173,14 @@ describe('POST /api/cases', () => {
     const req = new Request('http://localhost/api/cases', { method: 'POST', body: 'not json' })
     expect((await casesRoute.POST(req)).status).toBe(400)
   })
+
+  it('項目がないときのメッセージも日本語（zod の既定のメッセージ）', async () => {
+    const { clientName: _omitted, ...withoutName } = caseBody()
+    const res = await send(casesRoute.POST, 'POST', '/api/cases', withoutName)
+    expect(res.status).toBe(400)
+    expect(res.body.error.field).toBe('clientName')
+    expect(res.body.error.message).toMatch(/[ぁ-んァ-ヶ一-龠]/) // 日本語の文字を含む
+  })
 })
 
 // ---------- 読み取り ----------
@@ -188,6 +211,15 @@ describe('案件の取得', () => {
     const res = await send(caseRoute.GET, 'GET', `/api/cases/${created.body.id}`, undefined, { id: String(created.body.id) })
     expect(res.body.deadlines).toHaveLength(3)
     expect(res.body.nearDeadline).toBe(true) // 死亡日が2020年：期限はとうに過ぎている
+  })
+
+  it('死亡日が正しくない案件がデータベースにあっても、一覧は表示できる', async () => {
+    const created = await createCase()
+    // 画面や API を通さずに、データベースを直接編集した状態を作る。
+    await db.case.update({ where: { id: created.body.id }, data: { dateOfDeath: '2026-02-30' } })
+    const res = await send(casesRoute.GET, 'GET', '/api/cases')
+    expect(res.status).toBe(200)
+    expect(res.body[0].deadlines).toEqual([])
   })
 })
 
@@ -244,7 +276,7 @@ describe('受付から完了までの案件', () => {
 
     // 提携先ページの件数に反映される。
     const partners = await send(partnersRoute.GET, 'GET', '/api/partners')
-    expect(partners.body[0]).toMatchObject({ referred: 1, closed: 1 })
+    expect(partners.body[0]).toMatchObject({ caseCount: 1, closedCount: 1 })
   })
 })
 
@@ -297,11 +329,19 @@ describe('選択肢と相続人の削除', () => {
     expect([res.status, res.body.error.code]).toEqual([409, 'OPTIONS_LOCKED'])
   })
 
-  it('契約ステージより前なら相続人を削除できる（204）', async () => {
+  it('提案ステージより前なら相続人を削除できる（204）', async () => {
     const id = (await createCase()).body.id as number
     const heir = (await addHeir(id)).body.id as number
     const res = await send(heirRoute.DELETE, 'DELETE', `/api/cases/${id}/heirs/${heir}`, undefined, { id: String(id), heirId: String(heir) })
     expect(res.status).toBe(204)
+  })
+
+  it('提案ステージでは相続人を削除できない（409）。追加はできる', async () => {
+    const { id } = await caseAtProposal()
+    const added = await addHeir(id)
+    expect(added.status).toBe(201)
+    const res = await send(heirRoute.DELETE, 'DELETE', `/api/cases/${id}/heirs/${added.body.id}`, undefined, { id: String(id), heirId: String(added.body.id) })
+    expect([res.status, res.body.error.code]).toEqual([409, 'HEIR_REMOVAL_LOCKED'])
   })
 
   it('マスタにない続柄の相続人は拒否する（400）', async () => {

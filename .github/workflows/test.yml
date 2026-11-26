@@ -1,5 +1,6 @@
-# push とプルリクエストのたびに実行：インストール → 型チェック → すべてのテスト。
-# テストは専用の SQLite データベース（prisma/test.db）を自分で作るので、シークレットは不要。
+# push とプルリクエストのたびに実行：インストール → Prisma Client の生成 → 型チェック → すべてのテスト。
+# テストは専用の SQLite データベース（prisma/test.db）を自分で作り、DATABASE_URL も vitest.config.ts が
+# 指定するので、シークレットも環境変数も不要。
 name: test
 
 on:
@@ -9,8 +10,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: file:./dev.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

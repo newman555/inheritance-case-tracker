@@ -5,6 +5,11 @@ import { RuleError } from '@/rules/errors'
 
 // すべての API ルートで使う共通処理（サーバー側のみ）。
 
+// zod の既定のメッセージ（"Invalid input: expected string…" など）を、zod に入っている日本語版に切り替える。
+// 項目ごとに書いたメッセージはそのまま使われ、書いていない場合（項目がない、JSON でない など）だけ使われる。
+// すべての API ルートがこのファイルを読み込むので、ここで1回設定すれば足りる。
+z.config(z.locales.ja())
+
 // リクエストの JSON を読み、zod で形を確認する。形が違えば ZodError（→ 400）を投げる。
 // JSON でない本文は null になり、それも zod が拒否する。
 export async function readBody<S extends ZodType>(req: Request, schema: S): Promise<z.infer<S>> {
