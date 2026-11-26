@@ -8,6 +8,6 @@ tsconfig.tsbuildinfo
 *.db
 *.db-journal
 
-# All documentation for now: README, diagrams, step log, notes, private files (local only)
+# Private notes and planning documents (local only). Public docs: README.md, DIAGRAMS.md, API.md
 docs/
 *.pdf
