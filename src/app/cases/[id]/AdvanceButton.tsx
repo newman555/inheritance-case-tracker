@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { callApi } from '@/lib/callApi'
 
@@ -15,7 +15,11 @@ type Props = {
 export default function AdvanceButton({ caseId, nextStage, nextLabel }: Props) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(false) // API の応答を待っている間
+  const [refreshing, startRefresh] = useTransition() // 新しいページのデータを待っている間
+  // 画面が新しいステージに変わるまでボタンを押せなくする。押せると、古い表示のまま二度押しでき、
+  // 「ステージを飛ばしたり戻したりすることはできません」のエラーになってしまう。
+  const working = busy || refreshing
 
   if (!nextStage) {
     return <p className="text-muted">この案件は完了しています。これ以上ステージは動きません。</p>
@@ -27,13 +31,13 @@ export default function AdvanceButton({ caseId, nextStage, nextLabel }: Props) {
     const result = await callApi(`/api/cases/${caseId}/advance`, 'POST', { toStage: nextStage })
     setBusy(false)
     if (!result.ok) return setError(result.error.message)
-    router.refresh() // ページのデータを再読み込み：新しいステージ、タイムラインの新しい行
+    startRefresh(() => router.refresh()) // ページのデータを再読み込み：新しいステージ、タイムラインの新しい行
   }
 
   return (
     <div className="space-y-2">
-      <button onClick={move} disabled={busy} className="btn-primary">
-        {busy ? '処理中...' : `「${nextLabel}」へ進める`}
+      <button onClick={move} disabled={working} className="btn-primary">
+        {working ? '処理中...' : `「${nextLabel}」へ進める`}
       </button>
       {error && <div className="error-box">{error}</div>}
     </div>

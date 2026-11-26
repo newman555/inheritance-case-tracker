@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { callApi } from '@/lib/callApi'
 import type { Lookup } from '@/lib/lookups'
@@ -25,15 +25,21 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
   const removable = canRemoveHeirs(stage) // 削除（提案ステージからできない）
   const agreedCount = heirs.filter((h) => h.agreed).length
 
-  // API を1回呼ぶ。成功：ページのデータを再読み込み。拒否：サーバーのメッセージを表示。
+  const [busy, setBusy] = useState(false) // API の応答を待っている間
+  const [refreshing, startRefresh] = useTransition() // 新しいページのデータを待っている間
+  const working = busy || refreshing // この間はボタンとチェックを押せなくする（古い表示のまま二度押しさせない）
+
+  // API を1回呼ぶ。成功：ページのデータを再読み込み（終わるまで working）。拒否：サーバーのメッセージを表示。
   async function run(url: string, method: string, body?: unknown) {
     setError(null)
+    setBusy(true)
     const result = await callApi(url, method, body)
+    setBusy(false)
     if (!result.ok) {
       setError(result.error.message)
       return false
     }
-    router.refresh()
+    startRefresh(() => router.refresh())
     return true
   }
 
@@ -73,7 +79,7 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
                 <input
                   type="checkbox"
                   checked={h.agreed}
-                  disabled={!editable}
+                  disabled={!editable || working}
                   onChange={(e) => run(`/api/cases/${caseId}/heirs/${h.id}`, 'PATCH', { agreed: e.target.checked })}
                 />
                 同意
@@ -81,6 +87,7 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
               {removable && (
                 <button
                   className="btn-secondary px-3 py-1 text-sm"
+                  disabled={working}
                   onClick={() => run(`/api/cases/${caseId}/heirs/${h.id}`, 'DELETE')}
                 >
                   削除
@@ -100,7 +107,7 @@ export default function HeirsSection({ caseId, stage, heirs, relationships }: Pr
               <option key={r.code} value={r.code}>{r.label}</option>
             ))}
           </select>
-          <button className="btn-primary shrink-0">相続人を追加</button>
+          <button className="btn-primary shrink-0" disabled={working}>相続人を追加</button>
         </form>
       )}
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { callApi } from '@/lib/callApi'
@@ -29,15 +29,21 @@ export default function OptionsSection({ caseId, stage, options, chosenOptionId 
   const unusedTypes = OPTION_TYPES.filter((t) => !options.some((o) => o.type === t))
   const selectedType = unusedTypes.includes(type as (typeof OPTION_TYPES)[number]) ? type : (unusedTypes[0] ?? '')
 
-  // API を1回呼ぶ。成功：ページのデータを再読み込み。拒否：サーバーのメッセージを表示。
+  const [busy, setBusy] = useState(false) // API の応答を待っている間
+  const [refreshing, startRefresh] = useTransition() // 新しいページのデータを待っている間
+  const working = busy || refreshing // この間はボタンを押せなくする（古い表示のまま二度押しさせない）
+
+  // API を1回呼ぶ。成功：ページのデータを再読み込み（終わるまで working）。拒否：サーバーのメッセージを表示。
   async function run(url: string, method: string, body?: unknown) {
     setError(null)
+    setBusy(true)
     const result = await callApi(url, method, body)
+    setBusy(false)
     if (!result.ok) {
       setError(result.error.message)
       return false
     }
-    router.refresh()
+    startRefresh(() => router.refresh())
     return true
   }
 
@@ -92,6 +98,7 @@ export default function OptionsSection({ caseId, stage, options, chosenOptionId 
                   {canChoose && !chosen && (
                     <button
                       className="btn-primary px-3 py-1 text-sm"
+                      disabled={working}
                       onClick={() => run(`/api/cases/${caseId}/chosen-option`, 'PUT', { optionId: o.id })}
                     >
                       決定
@@ -100,6 +107,7 @@ export default function OptionsSection({ caseId, stage, options, chosenOptionId 
                   {editable && (
                     <button
                       className="btn-secondary px-3 py-1 text-sm"
+                      disabled={working}
                       onClick={() => run(`/api/cases/${caseId}/options/${o.id}`, 'DELETE')}
                     >
                       削除
@@ -128,7 +136,7 @@ export default function OptionsSection({ caseId, stage, options, chosenOptionId 
             onChange={(e) => setAmount(e.target.value)}
           />
           <input className="input" placeholder="メモ（メリット・デメリット）" value={memo} onChange={(e) => setMemo(e.target.value)} />
-          <button className="btn-primary">選択肢を追加</button>
+          <button className="btn-primary" disabled={working}>選択肢を追加</button>
         </form>
       )}
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ApiError, callApi } from '@/lib/callApi'
 import type { Lookup } from '@/lib/lookups'
@@ -11,14 +11,18 @@ export default function AddPartnerForm({ partnerTypes }: { partnerTypes: Lookup[
   const [name, setName] = useState('')
   const [type, setType] = useState(partnerTypes[0]?.code ?? '')
   const [error, setError] = useState<ApiError | null>(null)
+  const [busy, setBusy] = useState(false) // API の応答を待っている間
+  const [refreshing, startRefresh] = useTransition() // 新しい一覧を待っている間
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    setBusy(true)
     const result = await callApi('/api/partners', 'POST', { name, type })
+    setBusy(false)
     if (!result.ok) return setError(result.error)
     setName('')
-    router.refresh()
+    startRefresh(() => router.refresh()) // 一覧に新しい行が出るまで、ボタンを押せなくする
   }
 
   return (
@@ -31,7 +35,7 @@ export default function AddPartnerForm({ partnerTypes }: { partnerTypes: Lookup[
             <option key={t.code} value={t.code}>{t.label}</option>
           ))}
         </select>
-        <button className="btn-primary shrink-0">追加</button>
+        <button className="btn-primary shrink-0" disabled={busy || refreshing}>追加</button>
       </div>
       {error && <p className="field-error">{error.message}</p>}
     </form>

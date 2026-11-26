@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, ReactNode, useState } from 'react'
+import { FormEvent, ReactNode, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ApiError, callApi } from '@/lib/callApi'
@@ -31,7 +31,8 @@ export default function NewCaseForm({ partners, propertyTypes, today }: Props) {
     eventDate: '',
   })
   const [error, setError] = useState<ApiError | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [saving, setSaving] = useState(false) // API の応答を待っている間
+  const [navigating, startNavigation] = useTransition() // 登録した案件のページが開くまでの間
   const isEvent = form.leadSource === EVENT
 
   // フォームの1項目を更新する。
@@ -57,7 +58,8 @@ export default function NewCaseForm({ partners, propertyTypes, today }: Props) {
     })
     setSaving(false)
     if (!result.ok) return setError(result.error)
-    router.push(`/cases/${result.data.id}`) // 登録した案件のページへ移動
+    // 登録した案件のページへ移動。開くまで「登録中...」のままにして、二重登録を防ぐ。
+    startNavigation(() => router.push(`/cases/${result.data.id}`))
   }
 
   // ラベル・入力欄と、この項目についてのサーバーのメッセージ（赤字）。
@@ -150,8 +152,8 @@ export default function NewCaseForm({ partners, propertyTypes, today }: Props) {
         )}
       </section>
 
-      <button type="submit" disabled={saving} className="btn-primary">
-        {saving ? '登録中...' : '案件を登録'}
+      <button type="submit" disabled={saving || navigating} className="btn-primary">
+        {saving || navigating ? '登録中...' : '案件を登録'}
       </button>
     </form>
   )
